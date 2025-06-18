@@ -183,7 +183,8 @@ export default function Home() {
 
     try {
       setLoading(true);
-      const res = await fetch('http://localhost:3003/upload', {
+      const res = await fetch('https://resume-gpt-backend-7s7f.onrender.com/upload', {
+
         method: 'POST',
         body: formData,
       });
