@@ -8,16 +8,21 @@ export async function POST(request) {
   try {
     const body = await request.json();
     
-    // Determine backend URL
-    const backendUrl = process.env.NEXT_PUBLIC_BACKEND_URL || 
-                      (process.env.NODE_ENV === 'development' 
-                        ? 'http://localhost:3003' 
-                        : 'https://resume-gpt-backend-7s7f.onrender.com');
-
-    console.log(`[API Route] Proxying interview prep to: ${backendUrl}/interview-prep`);
+    // Determine backend URL - remove trailing slashes
+    let backendUrl = process.env.NEXT_PUBLIC_BACKEND_URL || 
+                     (process.env.NODE_ENV === 'development' 
+                       ? 'http://localhost:3003' 
+                       : 'https://resume-gpt-backend-7s7f.onrender.com');
+    
+    // Remove trailing slash if present
+    backendUrl = backendUrl.replace(/\/+$/, '');
+    
+    const interviewPrepUrl = `${backendUrl}/interview-prep`;
+    console.log(`[API Route] Proxying interview prep to: ${interviewPrepUrl}`);
+    console.log(`[API Route] Backend URL from env: ${process.env.NEXT_PUBLIC_BACKEND_URL || 'not set'}`);
 
     // Forward the request to the backend
-    const response = await fetch(`${backendUrl}/interview-prep`, {
+    const response = await fetch(interviewPrepUrl, {
       method: 'POST',
       headers: {
         'Content-Type': 'application/json',
