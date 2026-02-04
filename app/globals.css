@@ -24,3 +24,18 @@ body {
   color: var(--foreground);
   font-family: Arial, Helvetica, sans-serif;
 }
+
+/* Improved typography for resume analysis */
+p {
+  line-height: 1.75;
+  max-width: 65ch;
+}
+
+li {
+  line-height: 1.75;
+}
+
+/* Better spacing for lists */
+ul, ol {
+  padding-left: 1.5rem;
+}

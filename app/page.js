@@ -1,6 +1,8 @@
 'use client';
 import { useState } from 'react';
 import { Upload, FileText, Target, TrendingUp, Lightbulb, Code, Users, Briefcase, Globe, BookOpen, AlertCircle, CheckCircle } from 'lucide-react';
+import { parseAnalysisResponse } from '../lib/parseAnalysisResponse';
+import { Accordion } from '../components/Accordion';
 
 // Header Component
 function Header() {
@@ -67,9 +69,8 @@ function UploadSection({ onUpload, loading, file, setFile }) {
 }
 
 // Score Component
-function ScoreBoard({ score }) {
-  const numericScore = parseFloat(score?.match(/[\d.]+/)?.[0] || '0');
-  const scoreOutOf10 = numericScore > 10 ? Math.round(numericScore / 10) : numericScore;
+function ScoreBoard({ scoreNumber, scoreText, breakdown }) {
+  const scoreOutOf10 = scoreNumber || 0;
   
   const getScoreColor = (score) => {
     if (score >= 8) return 'text-emerald-400';
@@ -128,12 +129,20 @@ function ScoreBoard({ score }) {
           </div>
         </div>
         
-        <div className={`inline-block px-6 py-3 rounded-full bg-white/10 backdrop-blur-xl border border-white/20 ${getScoreColor(scoreOutOf10)} font-semibold`}>
+        <div className={`inline-block px-6 py-3 rounded-full bg-white/10 backdrop-blur-xl border border-white/20 ${getScoreColor(scoreOutOf10)} font-semibold mb-4`}>
           {getScoreText(scoreOutOf10)}
         </div>
         
-        {score && score.length > 10 && (
-          <p className="text-slate-300 mt-6 text-sm leading-relaxed">{score.replace(/^[\d.]+\/?\d*\s*[-:]?\s*/, '')}</p>
+        {breakdown && breakdown.length > 0 && (
+          <div className="mt-6 max-w-md mx-auto">
+            <ul className="space-y-2 text-left">
+              {breakdown.map((item, idx) => (
+                <li key={idx} className="text-slate-300 text-sm leading-relaxed">
+                  <span className="text-slate-400">•</span> {item}
+                </li>
+              ))}
+            </ul>
+          </div>
         )}
       </div>
     </div>
@@ -141,25 +150,37 @@ function ScoreBoard({ score }) {
 }
 
 // Feedback Card Component
-function FeedbackCard({ title, content, icon: Icon, isList = false }) {
+function FeedbackCard({ title, content, icon: Icon, isList = false, isNumbered = false }) {
   return (
     <div className="bg-white/5 backdrop-blur-xl border border-white/10 rounded-xl p-6 shadow-2xl hover:bg-white/10 transition-all duration-300 hover:border-white/20">
       <h3 className="text-lg font-bold text-slate-200 mb-4 flex items-center">
-        <Icon className="w-6 h-6 mr-3 text-slate-400" />
+        {Icon && <Icon className="w-6 h-6 mr-3 text-slate-400" />}
         {title}
       </h3>
       
       {isList ? (
-        <ul className="space-y-3">
-          {content?.map((item, idx) => (
-            <li key={idx} className="text-slate-300 flex items-start">
-              <div className="w-2 h-2 bg-slate-500 rounded-full mt-2 mr-3 flex-shrink-0"></div>
-              <span className="text-sm leading-relaxed">{item}</span>
-            </li>
-          ))}
-        </ul>
+        isNumbered ? (
+          <ol className="space-y-3 list-decimal list-inside">
+            {content?.map((item, idx) => (
+              <li key={idx} className="text-slate-300 text-sm leading-relaxed pl-2">
+                {item}
+              </li>
+            ))}
+          </ol>
+        ) : (
+          <ul className="space-y-3">
+            {content?.map((item, idx) => (
+              <li key={idx} className="text-slate-300 flex items-start">
+                <div className="w-2 h-2 bg-slate-500 rounded-full mt-2 mr-3 flex-shrink-0"></div>
+                <span className="text-sm leading-relaxed flex-1">{item}</span>
+              </li>
+            ))}
+          </ul>
+        )
       ) : (
-        <p className="text-slate-300 text-sm leading-relaxed whitespace-pre-line">{content}</p>
+        <div className="text-slate-300 text-sm leading-relaxed max-w-4xl" style={{ lineHeight: '1.75' }}>
+          {content}
+        </div>
       )}
     </div>
   );
@@ -169,6 +190,7 @@ function FeedbackCard({ title, content, icon: Icon, isList = false }) {
 export default function Home() {
   const [file, setFile] = useState(null);
   const [feedback, setFeedback] = useState(null);
+  const [parsedData, setParsedData] = useState(null);
   const [loading, setLoading] = useState(false);
 
   const handleUpload = async (e) => {
@@ -184,23 +206,43 @@ export default function Home() {
     try {
       setLoading(true);
       const res = await fetch('https://resume-gpt-backend-7s7f.onrender.com/upload', {
-
         method: 'POST',
         body: formData,
       });
 
       const data = await res.json();
       setFeedback(data.feedback || null);
+      
+      // Parse the raw feedback text if available
+      if (data.feedback?.raw) {
+        const parsed = parseAnalysisResponse(data.feedback.raw);
+        setParsedData(parsed);
+      } else if (data.feedback) {
+        // Fallback: use the already extracted fields from backend
+        // But we still want to parse for better structure
+        const rawText = data.feedback.raw || 
+          `ROLE: ${data.feedback.role || ''}\n\n` +
+          `SCORE: ${data.feedback.score || ''}\n\n` +
+          `FEEDBACK: ${data.feedback.feedback || ''}\n\n` +
+          `ISSUES: ${data.feedback.issues || ''}\n\n` +
+          `SUGGESTIONS: ${data.feedback.suggestions || ''}\n\n` +
+          `TECHNICAL SKILLS REQUIRED: ${data.feedback.technicalSkills || ''}\n\n` +
+          `SOFT SKILLS REQUIRED: ${data.feedback.softSkills || ''}\n\n` +
+          `PROJECTS THAT IMPRESS RECRUITERS: ${data.feedback.projects || ''}\n\n` +
+          `JOB MARKET INSIGHT: ${data.feedback.marketInsight || ''}\n\n` +
+          `LEARNING PATHS AND CERTIFICATIONS: ${data.feedback.learningPaths || ''}`;
+        
+        const parsed = parseAnalysisResponse(rawText);
+        setParsedData(parsed);
+      }
     } catch (err) {
       console.error('Upload failed:', err);
       setFeedback(null);
+      setParsedData(null);
     } finally {
       setLoading(false);
     }
   };
-
-  const renderList = (text) =>
-    text?.split('\n').map((line) => line.replace(/^[\-\*\d\.]\s*/, '').trim()).filter(Boolean) || [];
 
   return (
     <div className="min-h-screen bg-gradient-to-br from-slate-900 via-slate-800 to-blue-900 relative overflow-hidden">
@@ -225,93 +267,121 @@ export default function Home() {
           setFile={setFile} 
         />
 
-        {feedback && (
-          <div className="space-y-8">
-            {feedback.score && <ScoreBoard score={feedback.score} />}
-            
+        {parsedData && (
+          <div className="space-y-6">
+            {/* Score Section */}
+            {(parsedData.scoreNumber || parsedData.scoreText) && (
+              <ScoreBoard 
+                scoreNumber={parsedData.scoreNumber}
+                scoreText={parsedData.scoreText}
+                breakdown={parsedData.breakdown}
+              />
+            )}
+
+            {/* Target Role & General Feedback */}
             <div className="grid grid-cols-1 lg:grid-cols-2 gap-6">
-              {feedback.role && (
+              {parsedData.targetRole && (
                 <FeedbackCard 
                   title="Target Job Role" 
-                  content={feedback.role} 
+                  content={parsedData.targetRole} 
                   icon={Target}
                 />
               )}
               
-              {feedback.feedback && (
+              {parsedData.feedback && (
                 <FeedbackCard 
                   title="General Feedback" 
-                  content={feedback.feedback} 
+                  content={parsedData.feedback} 
                   icon={Lightbulb}
                 />
               )}
             </div>
 
-            <div className="grid grid-cols-1 lg:grid-cols-2 gap-6">
-              {feedback.issues && (
-                <FeedbackCard 
-                  title="Areas for Improvement" 
-                  content={renderList(feedback.issues)} 
-                  icon={AlertCircle}
-                  isList 
-                />
+            {/* Collapsible Sections for Long Content */}
+            <div className="space-y-4">
+              {parsedData.issues && parsedData.issues.length > 0 && (
+                <Accordion title="Areas for Improvement" icon={AlertCircle}>
+                  <ul className="space-y-3">
+                    {parsedData.issues.map((item, idx) => (
+                      <li key={idx} className="text-slate-300 flex items-start">
+                        <div className="w-2 h-2 bg-slate-500 rounded-full mt-2 mr-3 flex-shrink-0"></div>
+                        <span className="text-sm leading-relaxed flex-1">{item}</span>
+                      </li>
+                    ))}
+                  </ul>
+                </Accordion>
               )}
-              
-              {feedback.suggestions && (
-                <FeedbackCard 
-                  title="Suggested Improvements" 
-                  content={renderList(feedback.suggestions)} 
-                  icon={CheckCircle}
-                  isList 
-                />
+
+              {parsedData.suggestions && parsedData.suggestions.length > 0 && (
+                <Accordion title="Suggested Improvements" icon={CheckCircle} defaultOpen={true}>
+                  <ol className="space-y-3 list-decimal list-inside">
+                    {parsedData.suggestions.map((item, idx) => (
+                      <li key={idx} className="text-slate-300 text-sm leading-relaxed pl-2">
+                        {item}
+                      </li>
+                    ))}
+                  </ol>
+                </Accordion>
+              )}
+
+              {parsedData.technicalSkills && parsedData.technicalSkills.length > 0 && (
+                <Accordion title="Required Technical Skills" icon={Code}>
+                  <ul className="space-y-3">
+                    {parsedData.technicalSkills.map((item, idx) => (
+                      <li key={idx} className="text-slate-300 flex items-start">
+                        <div className="w-2 h-2 bg-slate-500 rounded-full mt-2 mr-3 flex-shrink-0"></div>
+                        <span className="text-sm leading-relaxed flex-1">{item}</span>
+                      </li>
+                    ))}
+                  </ul>
+                </Accordion>
+              )}
+
+              {parsedData.softSkills && parsedData.softSkills.length > 0 && (
+                <Accordion title="Required Soft Skills" icon={Users}>
+                  <ul className="space-y-3">
+                    {parsedData.softSkills.map((item, idx) => (
+                      <li key={idx} className="text-slate-300 flex items-start">
+                        <div className="w-2 h-2 bg-slate-500 rounded-full mt-2 mr-3 flex-shrink-0"></div>
+                        <span className="text-sm leading-relaxed flex-1">{item}</span>
+                      </li>
+                    ))}
+                  </ul>
+                </Accordion>
+              )}
+
+              {parsedData.projects && parsedData.projects.length > 0 && (
+                <Accordion title="Impressive Projects" icon={Briefcase}>
+                  <ol className="space-y-3 list-decimal list-inside">
+                    {parsedData.projects.map((item, idx) => (
+                      <li key={idx} className="text-slate-300 text-sm leading-relaxed pl-2">
+                        {item}
+                      </li>
+                    ))}
+                  </ol>
+                </Accordion>
+              )}
+
+              {parsedData.certifications && parsedData.certifications.length > 0 && (
+                <Accordion title="Learning Paths & Certifications" icon={BookOpen}>
+                  <ol className="space-y-3 list-decimal list-inside">
+                    {parsedData.certifications.map((item, idx) => (
+                      <li key={idx} className="text-slate-300 text-sm leading-relaxed pl-2">
+                        {item}
+                      </li>
+                    ))}
+                  </ol>
+                </Accordion>
+              )}
+
+              {parsedData.marketInsight && (
+                <Accordion title="Job Market Insight" icon={Globe}>
+                  <p className="text-slate-300 text-sm leading-relaxed" style={{ lineHeight: '1.75' }}>
+                    {parsedData.marketInsight}
+                  </p>
+                </Accordion>
               )}
             </div>
-
-            <div className="grid grid-cols-1 lg:grid-cols-2 gap-6">
-              {feedback.technicalSkills && (
-                <FeedbackCard 
-                  title="Required Technical Skills" 
-                  content={renderList(feedback.technicalSkills)} 
-                  icon={Code}
-                  isList 
-                />
-              )}
-              
-              {feedback.softSkills && (
-                <FeedbackCard 
-                  title="Required Soft Skills" 
-                  content={renderList(feedback.softSkills)} 
-                  icon={Users}
-                  isList 
-                />
-              )}
-            </div>
-
-            {feedback.projects && (
-              <FeedbackCard 
-                title="Impressive Projects" 
-                content={renderList(feedback.projects)} 
-                icon={Briefcase}
-                isList 
-              />
-            )}
-
-            {feedback.marketInsight && (
-              <FeedbackCard 
-                title="Job Market Insight" 
-                content={feedback.marketInsight} 
-                icon={Globe}
-              />
-            )}
-
-            {feedback.learningPaths && (
-              <FeedbackCard 
-                title="Learning Paths & Certifications" 
-                content={renderList(feedback.learningPaths)} 
-                icon={BookOpen}
-                isList 
-              />
-            )}
           </div>
         )}
       </main>
