@@ -78,6 +78,12 @@ function ScoreBoard({ scoreNumber, scoreText, breakdown }) {
     return 'text-red-400';
   };
 
+  const getScoreBgColor = (score) => {
+    if (score >= 8) return 'bg-emerald-400';
+    if (score >= 6) return 'bg-amber-400';
+    return 'bg-red-400';
+  };
+
   const getScoreText = (score) => {
     if (score >= 8) return 'Excellent';
     if (score >= 6) return 'Good';
@@ -86,15 +92,36 @@ function ScoreBoard({ scoreNumber, scoreText, breakdown }) {
 
   const strokeDasharray = `${(scoreOutOf10 / 10) * 100}, 100`;
 
+  // Parse breakdown items to extract category scores
+  const parseBreakdown = (breakdown) => {
+    if (!breakdown || !Array.isArray(breakdown)) return [];
+    
+    return breakdown.map(item => {
+      // Match patterns like "Formatting (2.3/2.5): description"
+      const match = item.match(/([^:]+?)\s*\(([\d.]+)\/([\d.]+)\):?\s*(.*)/);
+      if (match) {
+        return {
+          category: match[1].trim(),
+          score: parseFloat(match[2]),
+          max: parseFloat(match[3]),
+          description: match[4].trim()
+        };
+      }
+      return null;
+    }).filter(Boolean);
+  };
+
+  const breakdownItems = parseBreakdown(breakdown);
+
   return (
     <div className="bg-white/5 backdrop-blur-xl border border-white/10 rounded-2xl p-8 mb-8 shadow-2xl">
-      <div className="text-center">
+      <div className="text-center mb-8">
         <h3 className="text-2xl font-bold text-slate-200 mb-8 flex items-center justify-center">
           <TrendingUp className="w-7 h-7 mr-3 text-slate-400" />
           Resume Score
         </h3>
         
-        <div className="relative w-40 h-40 mx-auto mb-8">
+        <div className="relative w-40 h-40 mx-auto mb-6">
           {/* Background circle */}
           <div className="absolute inset-0 rounded-full bg-white/5 backdrop-blur-sm border border-white/10"></div>
           
@@ -129,22 +156,51 @@ function ScoreBoard({ scoreNumber, scoreText, breakdown }) {
           </div>
         </div>
         
-        <div className={`inline-block px-6 py-3 rounded-full bg-white/10 backdrop-blur-xl border border-white/20 ${getScoreColor(scoreOutOf10)} font-semibold mb-4`}>
+        <div className={`inline-block px-6 py-3 rounded-full bg-white/10 backdrop-blur-xl border border-white/20 ${getScoreColor(scoreOutOf10)} font-semibold`}>
           {getScoreText(scoreOutOf10)}
         </div>
-        
-        {breakdown && breakdown.length > 0 && (
-          <div className="mt-6 max-w-md mx-auto">
-            <ul className="space-y-2 text-left">
-              {breakdown.map((item, idx) => (
-                <li key={idx} className="text-slate-300 text-sm leading-relaxed">
-                  <span className="text-slate-400">•</span> {item}
-                </li>
-              ))}
-            </ul>
-          </div>
-        )}
       </div>
+      
+      {/* Breakdown Dashboard */}
+      {breakdownItems.length > 0 && (
+        <div className="mt-8 pt-8 border-t border-white/10">
+          <h4 className="text-lg font-semibold text-slate-300 mb-6 text-center">Score Breakdown</h4>
+          <div className="space-y-5">
+            {breakdownItems.map((item, idx) => {
+              const percentage = (item.score / item.max) * 100;
+              const getCategoryColor = (percentage) => {
+                if (percentage >= 80) return { text: 'text-emerald-400', bg: 'bg-emerald-400' };
+                if (percentage >= 60) return { text: 'text-amber-400', bg: 'bg-amber-400' };
+                return { text: 'text-red-400', bg: 'bg-red-400' };
+              };
+              const colors = getCategoryColor(percentage);
+              
+              return (
+                <div key={idx} className="bg-white/5 backdrop-blur-sm rounded-lg p-4 border border-white/10">
+                  <div className="flex items-center justify-between mb-2">
+                    <span className="text-slate-200 font-medium text-sm">{item.category}</span>
+                    <span className={`${colors.text} font-semibold text-sm`}>
+                      {item.score.toFixed(1)}/{item.max}
+                    </span>
+                  </div>
+                  
+                  {/* Progress Bar */}
+                  <div className="w-full bg-white/10 rounded-full h-2.5 mb-2 overflow-hidden">
+                    <div
+                      className={`h-full ${colors.bg} rounded-full transition-all duration-500`}
+                      style={{ width: `${percentage}%` }}
+                    ></div>
+                  </div>
+                  
+                  {item.description && (
+                    <p className="text-slate-400 text-xs mt-2 leading-relaxed">{item.description}</p>
+                  )}
+                </div>
+              );
+            })}
+          </div>
+        </div>
+      )}
     </div>
   );
 }
