@@ -1,8 +1,10 @@
 'use client';
-import { useState } from 'react';
-import { Upload, FileText, Target, TrendingUp, Lightbulb, Code, Users, Briefcase, Globe, BookOpen, AlertCircle, CheckCircle } from 'lucide-react';
+import { useState, useRef } from 'react';
+import { Upload, FileText, Target, TrendingUp, Lightbulb, Code, Users, Briefcase, Globe, BookOpen, AlertCircle, CheckCircle, X, RefreshCw } from 'lucide-react';
 import { parseAnalysisResponse } from '../lib/parseAnalysisResponse';
 import { Accordion } from '../components/Accordion';
+import { InterviewPrep } from '../components/InterviewPrep';
+import { MockInterview } from '../components/MockInterview';
 
 // Header Component
 function Header() {
@@ -22,12 +24,23 @@ function Header() {
 }
 
 // Upload Component
-function UploadSection({ onUpload, loading, file, setFile }) {
+function UploadSection({ onUpload, onClear, onRefresh, loading, file, setFile, hasResults }) {
+  const fileInputRef = useRef(null);
+
+  const handleClear = () => {
+    setFile(null);
+    if (fileInputRef.current) {
+      fileInputRef.current.value = '';
+    }
+    onClear();
+  };
+
   return (
     <div className="bg-white/5 backdrop-blur-xl border border-white/10 rounded-2xl p-8 mb-8 shadow-2xl">
       <div className="space-y-6">
         <div className="relative">
           <input
+            ref={fileInputRef}
             type="file"
             accept=".pdf"
             onChange={(e) => setFile(e.target.files[0])}
@@ -49,20 +62,44 @@ function UploadSection({ onUpload, loading, file, setFile }) {
           </label>
         </div>
         
-        <button
-          onClick={onUpload}
-          disabled={!file || loading}
-          className="w-full bg-white/10 hover:bg-white/15 disabled:bg-white/5 text-slate-200 font-semibold py-4 px-8 rounded-xl transition-all duration-300 backdrop-blur-xl border border-white/20 hover:border-white/30 shadow-lg"
-        >
-          {loading ? (
-            <div className="flex items-center justify-center">
-              <div className="animate-spin rounded-full h-6 w-6 border-b-2 border-slate-300 mr-3"></div>
-              <span>Analyzing Resume...</span>
-            </div>
-          ) : (
-            'Analyze Resume'
+        <div className="flex gap-3">
+          <button
+            onClick={onUpload}
+            disabled={!file || loading}
+            className="flex-1 bg-white/10 hover:bg-white/15 disabled:bg-white/5 text-slate-200 font-semibold py-4 px-8 rounded-xl transition-all duration-300 backdrop-blur-xl border border-white/20 hover:border-white/30 shadow-lg disabled:cursor-not-allowed"
+          >
+            {loading ? (
+              <div className="flex items-center justify-center">
+                <div className="animate-spin rounded-full h-6 w-6 border-b-2 border-slate-300 mr-3"></div>
+                <span>Analyzing Resume...</span>
+              </div>
+            ) : (
+              'Analyze Resume'
+            )}
+          </button>
+          
+          {(file || hasResults) && (
+            <button
+              onClick={handleClear}
+              disabled={loading}
+              className="bg-red-500/20 hover:bg-red-500/30 disabled:bg-red-500/10 text-red-300 font-semibold py-4 px-6 rounded-xl transition-all duration-300 backdrop-blur-xl border border-red-500/30 hover:border-red-500/40 shadow-lg disabled:cursor-not-allowed flex items-center justify-center"
+              title="Clear uploaded file and results"
+            >
+              <X className="w-5 h-5" />
+            </button>
           )}
-        </button>
+          
+          {hasResults && (
+            <button
+              onClick={onRefresh}
+              disabled={loading}
+              className="bg-blue-500/20 hover:bg-blue-500/30 disabled:bg-blue-500/10 text-blue-300 font-semibold py-4 px-6 rounded-xl transition-all duration-300 backdrop-blur-xl border border-blue-500/30 hover:border-blue-500/40 shadow-lg disabled:cursor-not-allowed flex items-center justify-center"
+              title="Refresh page"
+            >
+              <RefreshCw className="w-5 h-5" />
+            </button>
+          )}
+        </div>
       </div>
     </div>
   );
@@ -248,6 +285,93 @@ export default function Home() {
   const [feedback, setFeedback] = useState(null);
   const [parsedData, setParsedData] = useState(null);
   const [loading, setLoading] = useState(false);
+  const [interviewPrep, setInterviewPrep] = useState(null);
+  const [loadingInterviewPrep, setLoadingInterviewPrep] = useState(false);
+  const [showMockInterview, setShowMockInterview] = useState(false);
+  
+  const handleClear = () => {
+    setFile(null);
+    setFeedback(null);
+    setParsedData(null);
+    setInterviewPrep(null);
+    setShowMockInterview(false);
+  };
+  
+  const handleRefresh = () => {
+    window.location.reload();
+  };
+
+  const handleGenerateInterviewPrep = async () => {
+    if (!parsedData?.targetRole) {
+      alert('Please analyze a resume first to get the target role');
+      return;
+    }
+
+    try {
+      setLoadingInterviewPrep(true);
+      
+      // Extract skills and projects from parsed data
+      // Handle both array and string formats
+      const technicalSkills = Array.isArray(parsedData.technicalSkills) 
+        ? parsedData.technicalSkills 
+        : (parsedData.technicalSkills ? parsedData.technicalSkills.split('\n').filter(Boolean) : []);
+      
+      const softSkills = Array.isArray(parsedData.softSkills)
+        ? parsedData.softSkills
+        : (parsedData.softSkills ? parsedData.softSkills.split('\n').filter(Boolean) : []);
+      
+      const skills = [...technicalSkills, ...softSkills];
+      
+      const projects = Array.isArray(parsedData.projects)
+        ? parsedData.projects
+        : (parsedData.projects ? parsedData.projects.split('\n').filter(Boolean) : []);
+
+      // Use local API route for Next.js (works on localhost)
+      const apiUrl = '/api/interview-prep';
+      console.log(`[Frontend] Requesting interview prep from: ${apiUrl}`);
+      
+      const response = await fetch(apiUrl, {
+        method: 'POST',
+        headers: {
+          'Content-Type': 'application/json',
+        },
+        body: JSON.stringify({
+          targetRole: parsedData.targetRole,
+          skills: skills,
+          projects: projects,
+          seniority: parsedData.scoreNumber >= 8 ? 'Senior' : parsedData.scoreNumber >= 6 ? 'Mid-level' : 'Junior'
+        }),
+      });
+
+      // Check if response is OK and content-type is JSON
+      if (!response.ok) {
+        const errorText = await response.text();
+        console.error('API Error:', response.status, errorText);
+        throw new Error(`API returned ${response.status}: ${errorText.substring(0, 100)}`);
+      }
+
+      const contentType = response.headers.get('content-type');
+      if (!contentType || !contentType.includes('application/json')) {
+        const text = await response.text();
+        console.error('Non-JSON response:', text.substring(0, 200));
+        throw new Error('Server returned non-JSON response. Please check the backend URL.');
+      }
+
+      const data = await response.json();
+      if (data.data) {
+        setInterviewPrep(data.data);
+      } else if (data.error) {
+        alert(`Error: ${data.error}. ${data.message || ''}`);
+      } else {
+        alert('Failed to generate interview prep. Please try again.');
+      }
+    } catch (err) {
+      console.error('Failed to generate interview prep:', err);
+      alert(`Failed to generate interview prep: ${err.message || 'Please check your connection and try again.'}`);
+    } finally {
+      setLoadingInterviewPrep(false);
+    }
+  };
 
   const handleUpload = async (e) => {
     if (e) e.preventDefault();
@@ -261,10 +385,44 @@ export default function Home() {
 
     try {
       setLoading(true);
-      const res = await fetch('https://resume-gpt-backend-7s7f.onrender.com/upload', {
+      // Use local API route for Next.js (works on localhost)
+      // This will proxy to the backend server
+      const apiUrl = '/api/upload';
+      console.log(`[Frontend] Uploading to: ${apiUrl}`);
+      
+      const res = await fetch(apiUrl, {
         method: 'POST',
         body: formData,
       });
+
+      // Check if response is OK
+      if (!res.ok) {
+        const contentType = res.headers.get('content-type');
+        let errorMessage = `Upload failed (${res.status})`;
+        
+        if (contentType && contentType.includes('application/json')) {
+          const errorData = await res.json();
+          errorMessage = errorData.error || errorData.message || errorMessage;
+        } else {
+          const errorText = await res.text();
+          if (errorText.includes('<!DOCTYPE')) {
+            errorMessage = `Upload endpoint not found (404). Check if backend server is running.`;
+          } else {
+            errorMessage = errorText.substring(0, 100);
+          }
+        }
+        
+        console.error('Upload API Error:', res.status, errorMessage);
+        throw new Error(errorMessage);
+      }
+
+      // Check content-type before parsing JSON
+      const contentType = res.headers.get('content-type');
+      if (!contentType || !contentType.includes('application/json')) {
+        const text = await res.text();
+        console.error('Non-JSON response from upload:', text.substring(0, 200));
+        throw new Error('Server returned non-JSON response. Please check the backend configuration.');
+      }
 
       const data = await res.json();
       setFeedback(data.feedback || null);
@@ -295,6 +453,7 @@ export default function Home() {
       console.error('Upload failed:', err);
       setFeedback(null);
       setParsedData(null);
+      alert(`Upload failed: ${err.message || 'Please check your connection and try again.'}`);
     } finally {
       setLoading(false);
     }
@@ -317,10 +476,13 @@ export default function Home() {
         <Header />
         
         <UploadSection 
-          onUpload={handleUpload} 
+          onUpload={handleUpload}
+          onClear={handleClear}
+          onRefresh={handleRefresh}
           loading={loading} 
           file={file} 
-          setFile={setFile} 
+          setFile={setFile}
+          hasResults={!!parsedData || !!feedback}
         />
 
         {parsedData && (
@@ -439,6 +601,47 @@ export default function Home() {
               )}
             </div>
           </div>
+        )}
+
+        {/* Interview Prep Section */}
+        {parsedData && !showMockInterview && (
+          <div className="mt-8">
+            {!interviewPrep ? (
+              <div className="bg-white/5 backdrop-blur-xl border border-white/10 rounded-2xl p-8 shadow-2xl text-center">
+                <h3 className="text-xl font-bold text-slate-200 mb-4">Ready for Interview Prep?</h3>
+                <p className="text-slate-400 mb-6">
+                  Get personalized interview questions and answers based on your resume analysis
+                </p>
+                <button
+                  onClick={handleGenerateInterviewPrep}
+                  disabled={loadingInterviewPrep}
+                  className="bg-blue-500/20 hover:bg-blue-500/30 disabled:bg-blue-500/10 text-blue-300 font-semibold py-3 px-8 rounded-xl transition-all duration-300 border border-blue-500/30 hover:border-blue-500/40 shadow-lg disabled:cursor-not-allowed"
+                >
+                  {loadingInterviewPrep ? (
+                    <div className="flex items-center">
+                      <div className="animate-spin rounded-full h-5 w-5 border-b-2 border-blue-300 mr-3"></div>
+                      <span>Generating Interview Prep...</span>
+                    </div>
+                  ) : (
+                    'Generate Interview Prep'
+                  )}
+                </button>
+              </div>
+            ) : (
+              <InterviewPrep 
+                data={interviewPrep} 
+                onStartMockInterview={() => setShowMockInterview(true)}
+              />
+            )}
+          </div>
+        )}
+
+        {/* Mock Interview Mode */}
+        {showMockInterview && interviewPrep && (
+          <MockInterview 
+            interviewData={interviewPrep}
+            onExit={() => setShowMockInterview(false)}
+          />
         )}
       </main>
     </div>
