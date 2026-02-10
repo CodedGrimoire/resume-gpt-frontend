@@ -592,13 +592,19 @@ export default function Home() {
                 </Accordion>
               )}
 
-              {parsedData.marketInsight && (
-                <Accordion title="Job Market Insight" icon={Globe}>
-                  <p className="w-full max-w-none text-slate-300 text-sm leading-relaxed" style={{ lineHeight: '1.75' }}>
-                    {parsedData.marketInsight}
-                  </p>
-                </Accordion>
-              )}
+           {parsedData.marketInsight && (
+  <div className="w-full rounded-xl border border-white/10 bg-white/5 p-6">
+    <div className="flex items-center gap-2 mb-3">
+      <Globe className="h-5 w-5 text-slate-300" />
+      <h3 className="text-lg font-semibold text-white">Job Market Insight</h3>
+    </div>
+
+    <p className="w-full text-slate-300 text-sm leading-relaxed" style={{ lineHeight: '1.75' }}>
+      {parsedData.marketInsight}
+    </p>
+  </div>
+)}
+
             </div>
           </div>
         )}
