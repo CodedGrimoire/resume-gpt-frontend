@@ -605,7 +605,7 @@ export default function Home() {
 
         {/* Interview Prep Section */}
         {parsedData && !showMockInterview && (
-          <div className="mt-8">
+          <div className="mt-8 flex flex-col items-center justify-center text-center w-full">
             {!interviewPrep ? (
               <div className="bg-white/5 backdrop-blur-xl border border-white/10 rounded-2xl p-8 shadow-2xl text-center">
                 <h3 className="text-xl font-bold text-slate-200 mb-4">Ready for Interview Prep?</h3>

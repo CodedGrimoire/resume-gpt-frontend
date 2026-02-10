@@ -22,7 +22,7 @@ export function Accordion({ title, children, icon: Icon, defaultOpen = false }) 
         />
       </button>
       {isOpen && (
-        <div className="px-6 pb-6 pt-2 border-t border-white/10">
+        <div className="w-full px-6 pb-6 pt-2 border-t border-white/10">
           {children}
         </div>
       )}
