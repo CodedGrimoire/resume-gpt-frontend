@@ -594,7 +594,7 @@ export default function Home() {
 
               {parsedData.marketInsight && (
                 <Accordion title="Job Market Insight" icon={Globe}>
-                  <p className="w-full text-slate-300 text-sm leading-relaxed" style={{ lineHeight: '1.75' }}>
+                  <p className="w-full max-w-none text-slate-300 text-sm leading-relaxed" style={{ lineHeight: '1.75' }}>
                     {parsedData.marketInsight}
                   </p>
                 </Accordion>
