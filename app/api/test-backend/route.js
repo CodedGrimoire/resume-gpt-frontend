@@ -1,54 +1,41 @@
 import { NextResponse } from 'next/server';
 
-/**
- * Test endpoint to check backend connectivity
- * GET /api/test-backend
- */
+/** Read-only backend readiness check. It does not run or warm up Groq analysis. */
 export async function GET() {
-  try {
-    // Determine backend URL - remove trailing slashes
-    let backendUrl = process.env.NEXT_PUBLIC_BACKEND_URL || 
-                     (process.env.NODE_ENV === 'development' 
-                       ? 'http://localhost:3003' 
-                       : 'https://resume-gpt-backend-7s7f.onrender.com');
-    
-    // Remove trailing slash if present
-    backendUrl = backendUrl.replace(/\/+$/, '');
-    
-    const testUrl = `${backendUrl}/`;
-    
-    console.log(`[Test] Checking backend at: ${testUrl}`);
-    console.log(`[Test] NEXT_PUBLIC_BACKEND_URL: ${process.env.NEXT_PUBLIC_BACKEND_URL || 'not set'}`);
-    console.log(`[Test] NODE_ENV: ${process.env.NODE_ENV}`);
-    
-    const response = await fetch(testUrl, {
-      method: 'GET',
-      headers: {
-        'Accept': 'text/html,application/json',
-      },
-    });
+  const requestId = globalThis.crypto?.randomUUID?.() || `health-${Date.now()}`;
+  const startedAt = Date.now();
+  const configuredBackend = process.env.NEXT_PUBLIC_BACKEND_URL ||
+    (process.env.NODE_ENV === 'development'
+      ? 'http://localhost:3003'
+      : 'https://resume-gpt-backend-7s7f.onrender.com');
+  const backendUrl = configuredBackend.replace(/\/+$/, '');
 
+  console.info('[ResumeGPT backend health]', JSON.stringify({ event: 'backend.healthcheck.started', requestId, backendHost: new URL(backendUrl).host }));
+  try {
+    const response = await fetch(`${backendUrl}/health`, {
+      method: 'GET',
+      headers: { Accept: 'application/json', 'X-Request-Id': requestId },
+      signal: AbortSignal.timeout(8_000),
+    });
     const contentType = response.headers.get('content-type') || '';
-    const text = await response.text();
-    
+    const health = contentType.includes('application/json') ? await response.json() : null;
+    console.info('[ResumeGPT backend health]', JSON.stringify({ event: 'backend.healthcheck.completed', requestId, status: response.status, elapsedMs: Date.now() - startedAt }));
+
     return NextResponse.json({
       success: response.ok,
       status: response.status,
-      statusText: response.statusText,
-      backendUrl: backendUrl,
-      testUrl: testUrl,
-      contentType: contentType,
-      responsePreview: text.substring(0, 200),
-      message: response.ok 
-        ? 'Backend is reachable!' 
-        : `Backend returned ${response.status}: ${response.statusText}`
-    });
+      backendHost: new URL(backendUrl).host,
+      requestId,
+      health,
+      message: response.ok ? 'Backend is reachable.' : `Backend returned ${response.status}.`,
+    }, { status: response.ok ? 200 : 502 });
   } catch (error) {
+    const timedOut = error?.name === 'TimeoutError' || error?.name === 'AbortError';
+    console.error('[ResumeGPT backend health]', JSON.stringify({ event: 'backend.healthcheck.failed', requestId, errorName: error?.name || 'Error', message: String(error?.message || '').slice(0, 200), elapsedMs: Date.now() - startedAt }));
     return NextResponse.json({
       success: false,
-      error: error.message,
-      backendUrl: process.env.NEXT_PUBLIC_BACKEND_URL || 'not set',
-      message: 'Cannot reach backend server. Check if it is running and the URL is correct.'
-    }, { status: 500 });
+      error: timedOut ? 'Health check timed out.' : 'Health check could not reach the backend.',
+      requestId,
+    }, { status: timedOut ? 504 : 502 });
   }
 }

@@ -2,6 +2,7 @@
 import { useState, useRef } from 'react';
 import { Upload, FileText, Target, TrendingUp, Lightbulb, Code, Users, Briefcase, Globe, BookOpen, AlertCircle, CheckCircle, X, RefreshCw } from 'lucide-react';
 import { parseAnalysisResponse } from '../lib/parseAnalysisResponse';
+import { createUploadRequestId, requestResumeAnalysis } from '../lib/uploadResume.mjs';
 import { Accordion } from '../components/Accordion';
 import { InterviewPrep } from '../components/InterviewPrep';
 import { MockInterview } from '../components/MockInterview';
@@ -24,7 +25,7 @@ function Header() {
 }
 
 // Upload Component
-function UploadSection({ onUpload, onClear, onRefresh, loading, file, setFile, hasResults, uploadError }) {
+function UploadSection({ onUpload, onClear, onRefresh, loading, file, setFile, hasResults, uploadError, uploadStatus, setUploadError }) {
   const fileInputRef = useRef(null);
 
   const handleClear = () => {
@@ -43,7 +44,11 @@ function UploadSection({ onUpload, onClear, onRefresh, loading, file, setFile, h
             ref={fileInputRef}
             type="file"
             accept=".pdf"
-            onChange={(e) => setFile(e.target.files?.[0] || null)}
+            onChange={(e) => {
+              const selectedFile = e.target.files?.[0] || null;
+              setFile(selectedFile);
+              if (selectedFile) setUploadError('');
+            }}
             className="hidden"
             id="file-upload"
           />
@@ -71,6 +76,7 @@ function UploadSection({ onUpload, onClear, onRefresh, loading, file, setFile, h
         
         <div className="flex gap-3">
           <button
+            type="button"
             onClick={onUpload}
             disabled={!file || loading}
             className="flex-1 bg-white/10 hover:bg-white/15 disabled:bg-white/5 text-slate-200 font-semibold py-4 px-8 rounded-xl transition-all duration-300 backdrop-blur-xl border border-white/20 hover:border-white/30 shadow-lg disabled:cursor-not-allowed"
@@ -107,6 +113,11 @@ function UploadSection({ onUpload, onClear, onRefresh, loading, file, setFile, h
             </button>
           )}
         </div>
+        {loading && (
+          <p role="status" aria-live="polite" className="text-center text-sm text-slate-300">
+            {uploadStatus || 'Preparing your resume…'}
+          </p>
+        )}
       </div>
     </div>
   );
@@ -293,6 +304,7 @@ export default function Home() {
   const [parsedData, setParsedData] = useState(null);
   const [loading, setLoading] = useState(false);
   const [uploadError, setUploadError] = useState('');
+  const [uploadStatus, setUploadStatus] = useState('');
   const [interviewPrep, setInterviewPrep] = useState(null);
   const [loadingInterviewPrep, setLoadingInterviewPrep] = useState(false);
   const [showMockInterview, setShowMockInterview] = useState(false);
@@ -302,6 +314,7 @@ export default function Home() {
     setFeedback(null);
     setParsedData(null);
     setUploadError('');
+    setUploadStatus('');
     setInterviewPrep(null);
     setShowMockInterview(false);
   };
@@ -384,32 +397,25 @@ export default function Home() {
 
   const handleUpload = async (e) => {
     if (e) e.preventDefault();
+    const requestId = createUploadRequestId();
+    console.info('[ResumeGPT upload]', JSON.stringify({ event: 'analyze.button.clicked', requestId, fileSelected: Boolean(file), fileBytes: file?.size || 0 }));
     setUploadError('');
-    if (!file) {
-      setUploadError('Please select a PDF file first.');
-      return;
-    }
-    if (file.type !== 'application/pdf' && !file.name.toLowerCase().endsWith('.pdf')) {
-      setUploadError('Please choose a PDF file.');
-      return;
-    }
-
-    const formData = new FormData();
-    formData.append('resume', file);
     const controller = new AbortController();
-    const timeoutId = setTimeout(() => controller.abort(), 65_000);
+    const timeoutId = setTimeout(() => controller.abort(), 280_000);
+    const startedAt = Date.now();
 
     try {
       setLoading(true);
-      // Use local API route for Next.js (works on localhost)
-      // This will proxy to the backend server
-      const apiUrl = '/api/upload';
-      console.log(`[Frontend] Uploading to: ${apiUrl}`);
-      
-      const res = await fetch(apiUrl, {
-        method: 'POST',
-        body: formData,
+      setUploadStatus('Validating PDF…');
+      const { response: res } = await requestResumeAnalysis(file, {
+        requestId,
         signal: controller.signal,
+        onStage: (event, details) => {
+          console.info('[ResumeGPT upload]', JSON.stringify({ event, ...details }));
+          if (event === 'file.validation.started') setUploadStatus('Validating PDF…');
+          if (event === 'file.validation.passed') setUploadStatus('Uploading PDF and starting analysis…');
+          if (event === 'frontend.fetch.started') setUploadStatus('Waiting for resume analysis…');
+        },
       });
 
       const contentType = res.headers.get('content-type') || '';
@@ -419,6 +425,7 @@ export default function Home() {
 
       if (!res.ok) {
         const errorMessage = responseData?.error || responseData?.message || `Upload failed (${res.status}).`;
+        console.error('[ResumeGPT upload]', JSON.stringify({ event: 'frontend.response.failed', requestId, status: res.status, elapsedMs: Date.now() - startedAt }));
         throw new Error(errorMessage);
       }
 
@@ -430,6 +437,7 @@ export default function Home() {
       if (!data.feedback || (typeof data.feedback === 'object' && Object.keys(data.feedback).length === 0)) {
         throw new Error(data.error || 'The analysis service returned no resume feedback. Please try again.');
       }
+      console.info('[ResumeGPT upload]', JSON.stringify({ event: 'frontend.analysis.completed', requestId, status: res.status, elapsedMs: Date.now() - startedAt }));
       setFeedback(data.feedback || null);
       
       // Parse the raw feedback text if available
@@ -455,15 +463,18 @@ export default function Home() {
         setParsedData(parsed);
       }
     } catch (err) {
-      console.error('Upload failed:', err);
+      const message = err.name === 'AbortError'
+        ? 'Analysis exceeded the 280-second limit. Please try again; if it repeats, share the reference ID with support.'
+        : err.message || 'Please check your connection and try again.';
+      console.error('[ResumeGPT upload]', JSON.stringify({ event: 'frontend.analysis.failed', requestId, errorName: err.name, message: message.slice(0, 300), elapsedMs: Date.now() - startedAt }));
       setFeedback(null);
       setParsedData(null);
-      setUploadError(err.name === 'AbortError'
-        ? 'Analysis took longer than 65 seconds and was stopped. The analysis service may be starting up; please try again in a moment.'
-        : err.message || 'Please check your connection and try again.');
+      setUploadError(`${message} (Reference: ${requestId})`);
     } finally {
       clearTimeout(timeoutId);
       setLoading(false);
+      setUploadStatus('');
+      console.info('[ResumeGPT upload]', JSON.stringify({ event: 'frontend.loading.finished', requestId, elapsedMs: Date.now() - startedAt }));
     }
   };
 
@@ -492,6 +503,8 @@ export default function Home() {
           setFile={setFile}
           hasResults={!!parsedData || !!feedback}
           uploadError={uploadError}
+          uploadStatus={uploadStatus}
+          setUploadError={setUploadError}
         />
 
         {parsedData && (
