@@ -24,7 +24,7 @@ function Header() {
 }
 
 // Upload Component
-function UploadSection({ onUpload, onClear, onRefresh, loading, file, setFile, hasResults }) {
+function UploadSection({ onUpload, onClear, onRefresh, loading, file, setFile, hasResults, uploadError }) {
   const fileInputRef = useRef(null);
 
   const handleClear = () => {
@@ -43,7 +43,7 @@ function UploadSection({ onUpload, onClear, onRefresh, loading, file, setFile, h
             ref={fileInputRef}
             type="file"
             accept=".pdf"
-            onChange={(e) => setFile(e.target.files[0])}
+            onChange={(e) => setFile(e.target.files?.[0] || null)}
             className="hidden"
             id="file-upload"
           />
@@ -61,6 +61,13 @@ function UploadSection({ onUpload, onClear, onRefresh, loading, file, setFile, h
             </span>
           </label>
         </div>
+
+        {uploadError && (
+          <div role="alert" className="flex items-start gap-3 rounded-xl border border-red-400/30 bg-red-500/10 p-4 text-sm text-red-200">
+            <AlertCircle className="mt-0.5 h-5 w-5 shrink-0" />
+            <p>{uploadError}</p>
+          </div>
+        )}
         
         <div className="flex gap-3">
           <button
@@ -285,6 +292,7 @@ export default function Home() {
   const [feedback, setFeedback] = useState(null);
   const [parsedData, setParsedData] = useState(null);
   const [loading, setLoading] = useState(false);
+  const [uploadError, setUploadError] = useState('');
   const [interviewPrep, setInterviewPrep] = useState(null);
   const [loadingInterviewPrep, setLoadingInterviewPrep] = useState(false);
   const [showMockInterview, setShowMockInterview] = useState(false);
@@ -293,6 +301,7 @@ export default function Home() {
     setFile(null);
     setFeedback(null);
     setParsedData(null);
+    setUploadError('');
     setInterviewPrep(null);
     setShowMockInterview(false);
   };
@@ -375,13 +384,20 @@ export default function Home() {
 
   const handleUpload = async (e) => {
     if (e) e.preventDefault();
+    setUploadError('');
     if (!file) {
-      alert('Please select a PDF file');
+      setUploadError('Please select a PDF file first.');
+      return;
+    }
+    if (file.type !== 'application/pdf' && !file.name.toLowerCase().endsWith('.pdf')) {
+      setUploadError('Please choose a PDF file.');
       return;
     }
 
     const formData = new FormData();
     formData.append('resume', file);
+    const controller = new AbortController();
+    const timeoutId = setTimeout(() => controller.abort(), 65_000);
 
     try {
       setLoading(true);
@@ -393,38 +409,27 @@ export default function Home() {
       const res = await fetch(apiUrl, {
         method: 'POST',
         body: formData,
+        signal: controller.signal,
       });
 
-      // Check if response is OK
+      const contentType = res.headers.get('content-type') || '';
+      const responseData = contentType.includes('application/json')
+        ? await res.json()
+        : null;
+
       if (!res.ok) {
-        const contentType = res.headers.get('content-type');
-        let errorMessage = `Upload failed (${res.status})`;
-        
-        if (contentType && contentType.includes('application/json')) {
-          const errorData = await res.json();
-          errorMessage = errorData.error || errorData.message || errorMessage;
-        } else {
-          const errorText = await res.text();
-          if (errorText.includes('<!DOCTYPE')) {
-            errorMessage = `Upload endpoint not found (404). Check if backend server is running.`;
-          } else {
-            errorMessage = errorText.substring(0, 100);
-          }
-        }
-        
-        console.error('Upload API Error:', res.status, errorMessage);
+        const errorMessage = responseData?.error || responseData?.message || `Upload failed (${res.status}).`;
         throw new Error(errorMessage);
       }
 
-      // Check content-type before parsing JSON
-      const contentType = res.headers.get('content-type');
-      if (!contentType || !contentType.includes('application/json')) {
-        const text = await res.text();
-        console.error('Non-JSON response from upload:', text.substring(0, 200));
-        throw new Error('Server returned non-JSON response. Please check the backend configuration.');
+      if (!responseData) {
+        throw new Error('The analysis service returned an unexpected response. Please try again.');
       }
 
-      const data = await res.json();
+      const data = responseData;
+      if (!data.feedback || (typeof data.feedback === 'object' && Object.keys(data.feedback).length === 0)) {
+        throw new Error(data.error || 'The analysis service returned no resume feedback. Please try again.');
+      }
       setFeedback(data.feedback || null);
       
       // Parse the raw feedback text if available
@@ -453,8 +458,11 @@ export default function Home() {
       console.error('Upload failed:', err);
       setFeedback(null);
       setParsedData(null);
-      alert(`Upload failed: ${err.message || 'Please check your connection and try again.'}`);
+      setUploadError(err.name === 'AbortError'
+        ? 'Analysis took longer than 65 seconds and was stopped. The analysis service may be starting up; please try again in a moment.'
+        : err.message || 'Please check your connection and try again.');
     } finally {
+      clearTimeout(timeoutId);
       setLoading(false);
     }
   };
@@ -483,6 +491,7 @@ export default function Home() {
           file={file} 
           setFile={setFile}
           hasResults={!!parsedData || !!feedback}
+          uploadError={uploadError}
         />
 
         {parsedData && (

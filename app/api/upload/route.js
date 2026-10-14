@@ -1,5 +1,8 @@
 import { NextResponse } from 'next/server';
 
+// Keep the proxy's request bounded so the browser always receives a result.
+export const maxDuration = 60;
+
 /**
  * Next.js API Route: /api/upload
  * Proxies upload requests to the backend server
@@ -28,6 +31,7 @@ export async function POST(request) {
     const response = await fetch(uploadUrl, {
       method: 'POST',
       body: formData,
+      signal: AbortSignal.timeout(55_000),
     });
 
     // Check if response is OK
@@ -40,21 +44,9 @@ export async function POST(request) {
         errorMessage = errorData.error || errorData.message || errorMessage;
       } else {
         const errorText = await response.text();
-        if (errorText.includes('<!DOCTYPE') || response.status === 404) {
-          // Try to check if backend is reachable
-          try {
-            const healthCheck = await fetch(`${backendUrl}/`, { method: 'GET' });
-            if (healthCheck.ok) {
-              errorMessage = `Upload endpoint not found (404). The backend server is running at ${backendUrl}, but the /upload endpoint may not be available. Please check the backend routes.`;
-            } else {
-              errorMessage = `Backend server at ${backendUrl} returned ${healthCheck.status}. Please verify the server is running and accessible.`;
-            }
-          } catch (healthError) {
-            errorMessage = `Cannot reach backend server at ${backendUrl}. Please check: 1) Server is running, 2) URL is correct, 3) No firewall blocking the connection.`;
-          }
-        } else {
-          errorMessage = errorText.substring(0, 200);
-        }
+        errorMessage = errorText.includes('<!DOCTYPE') || response.status === 404
+          ? `The analysis endpoint was not found on the backend (${response.status}). Check the backend deployment.`
+          : errorText.substring(0, 200) || errorMessage;
       }
       
       console.error('[API Route] Backend error:', response.status);
@@ -82,6 +74,12 @@ export async function POST(request) {
 
   } catch (error) {
     console.error('[API Route] Upload Error:', error);
+    if (error.name === 'AbortError') {
+      return NextResponse.json(
+        { error: 'The analysis service did not respond within 55 seconds. Please try again in a moment.' },
+        { status: 504 }
+      );
+    }
     return NextResponse.json(
       { 
         error: 'Failed to process upload',
